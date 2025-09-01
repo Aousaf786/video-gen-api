@@ -1,5 +1,4 @@
-import os, json, tempfile, requests
-from typing import Optional
+import os, tempfile, requests
 from urllib.parse import urlparse
 
 def safe_filename_from_url(url: str) -> str:
@@ -22,9 +21,3 @@ def fetch_payload(payload_url: str) -> dict:
 
 def tmpdir(prefix="job_") -> str:
     return tempfile.mkdtemp(prefix=prefix)
-
-def bool_env(name: str, default: bool = False) -> bool:
-    v = os.getenv(name)
-    if v is None:
-        return default
-    return v.lower() in ("1", "true", "yes", "on")

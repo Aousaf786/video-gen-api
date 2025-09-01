@@ -23,11 +23,9 @@ app.add_middleware(
 
 JOBS: Dict[str, JobStatus] = {}
 
-
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
-
 
 def to_payload_model_with_raw(data: Dict[str, Any]) -> RenderPayload:
     """
@@ -37,12 +35,9 @@ def to_payload_model_with_raw(data: Dict[str, Any]) -> RenderPayload:
     try:
         p = RenderPayload(**data) if not is_timeline_payload(data) else RenderPayload()
     except ValidationError:
-        # If internal validation fails, fall back to an empty model
         p = RenderPayload()
-    # Stash raw dict unconditionally
     setattr(p, "_raw_dict", data)
     return p
-
 
 @app.post("/render", response_model=JobStatus)
 def render(req: RenderRequest, bg: BackgroundTasks):
@@ -55,10 +50,9 @@ def render(req: RenderRequest, bg: BackgroundTasks):
         except Exception as e:
             raise HTTPException(400, f"Failed to fetch payload_url: {e}")
     else:
-        # Take the Pydantic payload (if provided) and convert to dict
         raw_data = json.loads(req.payload.model_dump_json()) if req.payload else {}
 
-    # DEBUG: show what we received
+    # DEBUG
     print("[render] Received payload keys:", list(raw_data.keys()))
     if is_timeline_payload(raw_data):
         print("[render] Detected TIMELINE-style payload.")
@@ -95,7 +89,6 @@ def render(req: RenderRequest, bg: BackgroundTasks):
 
     bg.add_task(worker)
     return JOBS[job_id]
-
 
 @app.get("/jobs/{job_id}", response_model=JobStatus)
 def job_status(job_id: str):
