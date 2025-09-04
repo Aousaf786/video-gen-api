@@ -21,6 +21,7 @@ class Clip(BaseModel):
     position: Optional[str] = None
     opacity: Optional[float] = None
     fit: Optional[str] = None
+    position: str
 
 class Track(BaseModel):
     # "video" | "image" | "overlay" | "subtitle" | "audio"
