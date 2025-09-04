@@ -7,7 +7,9 @@ class TLClip(TypedDict, total=False):
     fit: Optional[str]
     opacity: Optional[float]
     volume: Optional[float]
-    type: str  # "video" | "image" | "audio"
+    type: str  # "video" | "image" | "audio" | "subtitle"
+    effects: Optional[List[Dict[str, Any]]]
+    position: str
 
 def _has_tracks_like(node: Any) -> bool:
     return isinstance(node, dict) and isinstance(node.get("tracks"), list) and any(
@@ -25,7 +27,7 @@ def _iter_tracks(data: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def extract_timeline_clips(data: Dict[str, Any]) -> List[TLClip]:
     """
-    Visual clips only (video/image) — used for the video concat.
+    Visual clips only (video/image) — used for the video concat / slideshow.
     """
     clips: List[TLClip] = []
     for tr in _iter_tracks(data):
@@ -35,16 +37,18 @@ def extract_timeline_clips(data: Dict[str, Any]) -> List[TLClip]:
             if t not in ("video", "image"):
                 continue
             length = float(c.get("length", 0.0))
-            if length <= 0:
+            if length <= 0 and t == "video":
+                # images can start with 0 (we'll assign duration later), but videos need length unless you want full file
                 continue
             clips.append(TLClip(
                 src=str(asset.get("src", "")),
                 start=float(c.get("start", 0.0)),
-                length=length,
+                length=float(c.get("length", 0.0)),
                 fit=c.get("fit"),
                 opacity=float(c["opacity"]) if c.get("opacity") is not None else None,
-                volume=float(asset["volume"]) if asset.get("volume") is not None else None,
+                effects=c.get("effects"),
                 type=t,
+                position=str(asset.get("position", "")),
             ))
     clips.sort(key=lambda x: x["start"])
     return clips
@@ -72,3 +76,24 @@ def extract_timeline_audio(data: Dict[str, Any]) -> List[TLClip]:
             ))
     clips.sort(key=lambda x: x["start"])
     return clips
+
+def extract_timeline_subtitles(data: Dict[str, Any]) -> List[TLClip]:
+    """
+    Subtitle clips (asset.type == 'subtitle'). We support a single active subtitle file
+    for now (burn-in). If multiple, we pick the first after sorting by start.
+    """
+    subs: List[TLClip] = []
+    for tr in _iter_tracks(data):
+        for c in tr.get("clips", []) or []:
+            asset = c.get("asset") or {}
+            t = (asset.get("type") or "").lower()
+            if t != "subtitle":
+                continue
+            subs.append(TLClip(
+                src=str(asset.get("src", "")),
+                start=float(c.get("start", 0.0)),
+                length=float(c.get("length", 0.0)) if c.get("length") is not None else 0.0,
+                type=t,
+            ))
+    subs.sort(key=lambda x: x["start"])
+    return subs
