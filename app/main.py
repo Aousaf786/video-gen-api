@@ -11,10 +11,12 @@ from .storage import upload_if_configured
 from .parser import is_timeline_payload
 
 PORT = int(os.getenv("PORT", "8080"))
-OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/tmp/outputs")
+OUTPUT_DIR = "/workspace/outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 app = FastAPI(title="GPU Video Render Service", version="0.3.0")
+
+app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 
 app.add_middleware(
     CORSMiddleware,
@@ -85,7 +87,7 @@ def render(req: RenderRequest, bg: BackgroundTasks):
                 return
             url = upload_if_configured(out_file)
             JOBS[job_id].status = "success"
-            JOBS[job_id].output_url = url
+            JOBS[job_id].output_url = f"{BASE_URL}/outputs/{out_file}"
             JOBS[job_id].logs = logs
         except Exception as e:
             JOBS[job_id].status = "failed"
