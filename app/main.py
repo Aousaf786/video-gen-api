@@ -1,6 +1,7 @@
 import os, json, uuid, shutil
 from typing import Dict, Any
 from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
@@ -12,6 +13,8 @@ from .parser import is_timeline_payload
 
 PORT = int(os.getenv("PORT", "8080"))
 OUTPUT_DIR = "/workspace/outputs"
+BASE_URL = "https://xiff2j86qmsii8-8080.proxy.runpod.net"
+
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 app = FastAPI(title="GPU Video Render Service", version="0.3.0")
