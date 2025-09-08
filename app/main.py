@@ -49,6 +49,7 @@ def render(req: RenderRequest, bg: BackgroundTasks):
     if not req.payload and not req.payload_url:
         raise HTTPException(400, "Provide either 'payload' or 'payload_url'")
 
+    # Resolve payload
     if req.payload_url:
         try:
             raw_data = fetch_payload(str(req.payload_url))
@@ -66,49 +67,59 @@ def render(req: RenderRequest, bg: BackgroundTasks):
 
     payload = to_payload_model_with_raw(raw_data)
 
+    # Create job entry right away
     job_id = str(uuid.uuid4())
     file_name = req.output_filename or f"{job_id}.mp4"
     out_file = os.path.join(OUTPUT_DIR, file_name)
-    JOBS[job_id] = JobStatus(id=job_id, status="queued", message="Queued")
 
-    import time
+    JOBS[job_id] = JobStatus(
+        id=job_id,
+        status="queued",
+        message="Queued",
+        output_url=None,
+        logs=None
+    )
 
-def worker():
-    JOBS[job_id].status = "running"
-    workdir = tmpdir(prefix=f"{job_id}_")
-    try:
-        cmd = build_ffmpeg_cmd(payload, workdir, out_file)
-        print("[render] ffmpeg cmd:", " ".join(cmd))
+    def worker():
+        import time
+        JOBS[job_id].status = "running"
+        workdir = tmpdir(prefix=f"{job_id}_")
+        try:
+            cmd = build_ffmpeg_cmd(payload, workdir, out_file)
+            print("[render] ffmpeg cmd:", " ".join(cmd))
 
-        # ⏱ start timer
-        start_time = time.time()
+            # start timer
+            start_time = time.time()
+            rc, logs = run_ffmpeg(cmd)
+            end_time = time.time()
 
-        rc, logs = run_ffmpeg(cmd)
+            generation_time = round(end_time - start_time, 2)
 
-        # ⏱ end timer
-        end_time = time.time()
-        generation_time = round(end_time - start_time, 2)  # seconds, 2 decimal places
+            if rc != 0:
+                JOBS[job_id].status = "failed"
+                JOBS[job_id].message = f"FFmpeg exited with {rc}"
+                JOBS[job_id].logs = logs
+                JOBS[job_id].generation_time = generation_time
+                return
 
-        if rc != 0:
-            JOBS[job_id].status = "failed"
-            JOBS[job_id].message = f"FFmpeg exited with {rc}"
+            upload_if_configured(out_file)
+            JOBS[job_id].status = "success"
+            JOBS[job_id].output_url = f"{BASE_URL}/outputs/{file_name}"
             JOBS[job_id].logs = logs
             JOBS[job_id].generation_time = generation_time
-            return
 
-        url = upload_if_configured(out_file)
-        JOBS[job_id].status = "success"
-        JOBS[job_id].output_url = f"{BASE_URL}/outputs/{file_name}"
-        JOBS[job_id].logs = logs
-        JOBS[job_id].generation_time = generation_time
+        except Exception as e:
+            JOBS[job_id].status = "failed"
+            JOBS[job_id].message = f"Error: {e}"
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
 
-    except Exception as e:
-        JOBS[job_id].status = "failed"
-        JOBS[job_id].message = f"Error: {e}"
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
+    # Run worker in background
+    bg.add_task(worker)
 
+    # ✅ Return queued job immediately so FastAPI always has a valid response
     return JOBS[job_id]
+
 
 @app.get("/jobs/{job_id}", response_model=JobStatus)
 def job_status(job_id: str):
