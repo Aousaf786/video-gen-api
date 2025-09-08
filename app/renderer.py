@@ -122,11 +122,13 @@ def apply_effects(chain: str, effects, W: int, H: int, FPS: int, dur: float, ind
     Supports:
       - {"type":"zoom_in"} / {"type":"zoom_out"}
       - {"type":"fade","in":0.5,"out":0.5}
-    Order: zoom -> fades.
+      - {"type":"slide_in","direction":"up|down|left|right","duration":1.0}
+      - {"type":"slide_out","direction":"up|down|left|right","duration":1.0}
+    Order: zoom -> slide_in -> fade -> slide_out
     """
     effs = effects or []
 
-    # zoom (Ken Burns-ish)
+    # ---- Zoom (Ken Burns style)
     for e in effs:
         t = (e.get("type") or "").lower()
         if t in ("zoom_in", "zoom_out"):
@@ -136,13 +138,43 @@ def apply_effects(chain: str, effects, W: int, H: int, FPS: int, dur: float, ind
             chain += f",zoompan=z='{zexpr}':x='iw/2-(iw/zoom)/2':y='ih/2-(ih/zoom)/2':d={dframes}:s={W}x{H}:fps={FPS}"
             break
 
-    # fade in/out
+    # ---- Slide in
+    for e in effs:
+        if (e.get("type") or "").lower() == "slide_in":
+            direction = (e.get("direction") or "up").lower()
+            dur_slide = float(e.get("duration", 1.0))
+            if direction == "up":
+                chain += f",fade=t=in:st=0:d={dur_slide},translate=y='h-(t/{dur_slide})*h'"
+            elif direction == "down":
+                chain += f",fade=t=in:st=0:d={dur_slide},translate=y='-(h-(t/{dur_slide})*h)'"
+            elif direction == "left":
+                chain += f",fade=t=in:st=0:d={dur_slide},translate=x='w-(t/{dur_slide})*w'"
+            elif direction == "right":
+                chain += f",fade=t=in:st=0:d={dur_slide},translate=x='-(w-(t/{dur_slide})*w)'"
+
+    # ---- Fade in/out
     for e in effs:
         if (e.get("type") or "").lower() == "fade":
             fin = float(e.get("in", 0.5))
             fout = float(e.get("out", 0.5))
             chain += f",fade=t=in:st=0:d={fin:.3f},fade=t=out:st={max(0.0, dur-fout):.3f}:d={fout:.3f}"
+
+    # ---- Slide out
+    for e in effs:
+        if (e.get("type") or "").lower() == "slide_out":
+            direction = (e.get("direction") or "down").lower()
+            dur_slide = float(e.get("duration", 1.0))
+            if direction == "up":
+                chain += f",fade=t=out:st={max(0.0, dur-dur_slide):.3f}:d={dur_slide},translate=y='-(t/{dur_slide})*h'"
+            elif direction == "down":
+                chain += f",fade=t=out:st={max(0.0, dur-dur_slide):.3f}:d={dur_slide},translate=y='(t/{dur_slide})*h'"
+            elif direction == "left":
+                chain += f",fade=t=out:st={max(0.0, dur-dur_slide):.3f}:d={dur_slide},translate=x='-(t/{dur_slide})*w'"
+            elif direction == "right":
+                chain += f",fade=t=out:st={max(0.0, dur-dur_slide):.3f}:d={dur_slide},translate=x='(t/{dur_slide})*w'"
+
     return chain
+
 
 
 def _escape_sub_path(p: str) -> str:
