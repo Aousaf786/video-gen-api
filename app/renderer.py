@@ -117,22 +117,15 @@ def build_black_fallback(out_path: str, W: int, H: int, FPS: int) -> List[str]:
 
 
 # ---------- Effects helpers ----------
-def apply_effects(chain: str, effects, W: int, H: int, FPS: int, dur: float, index: int) -> tuple[str, dict]:
+def apply_effects(chain: str, effects, W: int, H: int, FPS: int, dur: float, index: int) -> str:
     """
     Supports:
       - {"type":"zoom_in"} / {"type":"zoom_out"}
       - {"type":"fade","in":0.5,"out":0.5}
-      - {"type":"slide_in","direction":"up|down|left|right","duration":1.0}
-      - {"type":"slide_out","direction":"up|down|left|right","duration":1.0}
-
-    Returns:
-      chain: modified filter chain string
-      slide: dict with slide overlay expressions (to be used in overlay filter)
     """
     effs = effects or []
-    slide_cfg = {}
 
-    # ---- Zoom (Ken Burns style)
+    # ---- Zoom
     for e in effs:
         t = (e.get("type") or "").lower()
         if t in ("zoom_in", "zoom_out"):
@@ -148,36 +141,8 @@ def apply_effects(chain: str, effects, W: int, H: int, FPS: int, dur: float, ind
             fin = float(e.get("in", 0.5))
             fout = float(e.get("out", 0.5))
             chain += f",fade=t=in:st=0:d={fin:.3f},fade=t=out:st={max(0.0, dur-fout):.3f}:d={fout:.3f}"
+    return chain
 
-    # ---- Slide (prepare overlay expressions)
-    for e in effs:
-        etype = (e.get("type") or "").lower()
-        if etype in ("slide_in", "slide_out"):
-            direction = (e.get("direction") or "up").lower()
-            dur_slide = float(e.get("duration", 1.0))
-
-            if etype == "slide_in":
-                if direction == "up":
-                    slide_cfg = {"x": "(W-w)/2", "y": f"H-(t/{dur_slide})*H"}
-                elif direction == "down":
-                    slide_cfg = {"x": "(W-w)/2", "y": f"-(H-(t/{dur_slide})*H)"}
-                elif direction == "left":
-                    slide_cfg = {"x": f"W-(t/{dur_slide})*W", "y": "(H-h)/2"}
-                elif direction == "right":
-                    slide_cfg = {"x": f"-(W-(t/{dur_slide})*W)", "y": "(H-h)/2"}
-
-            elif etype == "slide_out":
-                st = max(0.0, dur - dur_slide)
-                if direction == "up":
-                    slide_cfg = {"x": "(W-w)/2", "y": f"-(t-{st})/{dur_slide}*H"}
-                elif direction == "down":
-                    slide_cfg = {"x": "(W-w)/2", "y": f"(t-{st})/{dur_slide}*H"}
-                elif direction == "left":
-                    slide_cfg = {"x": f"-(t-{st})/{dur_slide}*W", "y": "(H-h)/2"}
-                elif direction == "right":
-                    slide_cfg = {"x": f"(t-{st})/{dur_slide}*W", "y": "(H-h)/2"}
-
-    return chain, slide_cfg
 
 def _escape_sub_path(p: str) -> str:
     return p.replace("\\", "\\\\").replace(":", r"\:").replace("'", r"\'").replace(",", r"\,")
