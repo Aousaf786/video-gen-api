@@ -1,7 +1,7 @@
 import os, tempfile, requests
 from urllib.parse import urlparse
 
-ASSETS_ROOT = os.getenv("ASSETS_ROOT", "/app/assets")           # e.g., /workspace/assets  (Pods) or /tmp/assets (Serverless)
+ASSETS_ROOT = "/workspace/assets"           # e.g., /workspace/assets  (Pods) or /tmp/assets (Serverless)
 ASSET_URL_PREFIX = os.getenv("ASSET_URL_PREFIX") # e.g., https://my-cdn.example.com/assets/
 DEFAULT_TIMEOUT = int(os.getenv("DOWNLOAD_TIMEOUT", "300"))
 
@@ -42,10 +42,8 @@ def resolve_asset_src(src: str) -> str:
     if src.startswith("asset://"):
         local = _asset_local_path(src)
         if os.path.exists(local):
-            print("Exist ========================================================222222222222222222", local)
             return local
         # optional: fallback to CDN prefix if present
-        print("Assets ROOT========================================================222222222222222222", local)
         if ASSET_URL_PREFIX:
             return ASSET_URL_PREFIX.rstrip("/") + "/" + src[len("asset://"):]
         return src  # let renderer download if it's a URL
