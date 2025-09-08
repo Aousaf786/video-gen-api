@@ -73,7 +73,8 @@ def render(req: RenderRequest, bg: BackgroundTasks):
     payload = to_payload_model_with_raw(raw_data)
 
     job_id = str(uuid.uuid4())
-    out_file = os.path.join(OUTPUT_DIR, req.output_filename or f"{job_id}.mp4")
+    file_name = req.output_filename or f"{job_id}.mp4"
+    out_file = os.path.join(OUTPUT_DIR, file_name)
     JOBS[job_id] = JobStatus(id=job_id, status="queued", message="Queued")
 
     def worker():
@@ -90,7 +91,7 @@ def render(req: RenderRequest, bg: BackgroundTasks):
                 return
             url = upload_if_configured(out_file)
             JOBS[job_id].status = "success"
-            JOBS[job_id].output_url = f"{BASE_URL}/outputs/{out_file}"
+            JOBS[job_id].output_url = f"{BASE_URL}/outputs/{file_name}"
             JOBS[job_id].logs = logs
         except Exception as e:
             JOBS[job_id].status = "failed"
