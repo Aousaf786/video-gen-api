@@ -116,3 +116,4 @@ class JobStatus(BaseModel):
     message: Optional[str] = None
     output_url: Optional[str] = None
     logs: Optional[str] = None
+    generation_time: float = 0
