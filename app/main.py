@@ -71,29 +71,43 @@ def render(req: RenderRequest, bg: BackgroundTasks):
     out_file = os.path.join(OUTPUT_DIR, file_name)
     JOBS[job_id] = JobStatus(id=job_id, status="queued", message="Queued")
 
-    def worker():
-        JOBS[job_id].status = "running"
-        workdir = tmpdir(prefix=f"{job_id}_")
-        try:
-            cmd = build_ffmpeg_cmd(payload, workdir, out_file)
-            print("[render] ffmpeg cmd:", " ".join(cmd))
-            rc, logs = run_ffmpeg(cmd)
-            if rc != 0:
-                JOBS[job_id].status = "failed"
-                JOBS[job_id].message = f"FFmpeg exited with {rc}"
-                JOBS[job_id].logs = logs
-                return
-            url = upload_if_configured(out_file)
-            JOBS[job_id].status = "success"
-            JOBS[job_id].output_url = f"{BASE_URL}/outputs/{file_name}"
-            JOBS[job_id].logs = logs
-        except Exception as e:
-            JOBS[job_id].status = "failed"
-            JOBS[job_id].message = f"Error: {e}"
-        finally:
-            shutil.rmtree(workdir, ignore_errors=True)
+    import time
 
-    bg.add_task(worker)
+def worker():
+    JOBS[job_id].status = "running"
+    workdir = tmpdir(prefix=f"{job_id}_")
+    try:
+        cmd = build_ffmpeg_cmd(payload, workdir, out_file)
+        print("[render] ffmpeg cmd:", " ".join(cmd))
+
+        # ⏱ start timer
+        start_time = time.time()
+
+        rc, logs = run_ffmpeg(cmd)
+
+        # ⏱ end timer
+        end_time = time.time()
+        generation_time = round(end_time - start_time, 2)  # seconds, 2 decimal places
+
+        if rc != 0:
+            JOBS[job_id].status = "failed"
+            JOBS[job_id].message = f"FFmpeg exited with {rc}"
+            JOBS[job_id].logs = logs
+            JOBS[job_id].generation_time = generation_time
+            return
+
+        url = upload_if_configured(out_file)
+        JOBS[job_id].status = "success"
+        JOBS[job_id].output_url = f"{BASE_URL}/outputs/{file_name}"
+        JOBS[job_id].logs = logs
+        JOBS[job_id].generation_time = generation_time
+
+    except Exception as e:
+        JOBS[job_id].status = "failed"
+        JOBS[job_id].message = f"Error: {e}"
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
     return JOBS[job_id]
 
 @app.get("/jobs/{job_id}", response_model=JobStatus)
