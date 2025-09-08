@@ -77,7 +77,8 @@ def render(req: RenderRequest, bg: BackgroundTasks):
         status="queued",
         message="Queued",
         output_url=None,
-        logs=None
+        logs=None,
+        generation_time=0
     )
 
     def worker():
