@@ -20,7 +20,6 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 
 # App code
 COPY app /app/app
-COPY assets /app/assets
 
 # Nginx config (replaces default site config)
 COPY nginx.conf /etc/nginx/sites-enabled/default
@@ -31,7 +30,7 @@ RUN chmod +x /app/start.sh
 
 
 ENV PORT=8080 \
-    OUTPUT_DIR=/workspace/assets/
+    OUTPUT_DIR=/workspace/outputs
 
 EXPOSE 8080 80
 
