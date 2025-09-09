@@ -126,12 +126,19 @@ def apply_effects(chain: str, effects, W: int, H: int, FPS: int, dur: float, ind
     # ---- Zoom
     zoom_added = False
     for e in effs:
-        t = (e.get("type") or "").lower()
-        if t in ("zoom_in", "zoom_out"):
+        e_t = (e.get("type") or "").lower()
+        if e_t in ("zoom_in", "zoom_out"):
+            z_start = 1 if e_t == "zoom_in" else 1.5
+            z_end = 1.5 if e_t == "zoom_in" else 1.0
+
             dframes = max(1, int(round(FPS * dur)))
-            step = 0.0008 if t == "zoom_in" else -0.0008
-            zexpr = f"if(lte(on,1),1.0,clip(1.0+{step}*(on-1),0.9,1.2))"
-            chain += f",zoompan=z='{zexpr}':x='iw/2-(iw/zoom)/2':y='ih/2-(ih/zoom)/2':d={dframes}:s={W}x{H}"
+            zexpr = f"{z_start}+({z_end - z_start})*(1-cos(PI*on/{dframes}))/2"
+            chain += (
+                f",zoompan=z='{zexpr}':"
+                f"x='iw/2-(iw/zoom)/2':"
+                f"y='ih/2-(ih/zoom)/2':"
+                f"d=1:s={W}x{H}"
+            )
             zoom_added = True
             break
 
