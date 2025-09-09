@@ -57,7 +57,6 @@ def download_http(url: str, dest: str) -> str:
 
 
 def download_asset(url: str, dest_dir: str) -> str:
-    # resolve asset:// and local paths
     resolved = resolve_asset_src(url)
     if resolved and os.path.exists(resolved):
         return resolved
@@ -88,7 +87,6 @@ def position_to_xy(position: Optional[str], W: int, H: int) -> Tuple[str, str]:
 
 
 def add_input(args_list: List[str], *tokens: str) -> None:
-    """Insert probing/queue options just before -i."""
     parts = list(tokens)
     try:
         i_idx = parts.index("-i")
@@ -122,59 +120,59 @@ def apply_effects(chain: str, effects, W: int, H: int, FPS: int, dur: float, ind
     Supports:
       - {"type":"zoom_in"} / {"type":"zoom_out"}
       - {"type":"fade","in":0.5,"out":0.5}
-      - {"type":"slide_in","direction":"up|down|left|right","duration":1.0}
-      - {"type":"slide_out","direction":"up|down|left|right","duration":1.0}
-    Order: zoom -> slide_in -> fade -> slide_out
     """
     effs = effects or []
 
-    # ---- Zoom (Ken Burns style)
+    # ---- Zoom
+    zoom_added = False
     for e in effs:
-        t = (e.get("type") or "").lower()
-        if t in ("zoom_in", "zoom_out"):
+        e_t = (e.get("type") or "").lower()
+        if e_t in ("zoom_in", "zoom_out"):
+            z_start = 1 if e_t == "zoom_in" else 1.5
+            z_end = 1.5 if e_t == "zoom_in" else 1.0
+
             dframes = max(1, int(round(FPS * dur)))
-            step = 0.0008 if t == "zoom_in" else -0.0008
-            zexpr = f"if(lte(on,1),1.0,clip(1.0+{step}*(on-1),0.9,1.2))"
-            chain += f",zoompan=z='{zexpr}':x='iw/2-(iw/zoom)/2':y='ih/2-(ih/zoom)/2':d={dframes}:s={W}x{H}:fps={FPS}"
+            zexpr = f"{z_start}+({z_end - z_start})*(1-cos(PI*on/{dframes}))/2"
+            chain += (
+                f",zoompan=z='{zexpr}':"
+                f"x='iw/2-(iw/zoom)/2':"
+                f"y='ih/2-(ih/zoom)/2':"
+                f"d=1:s={W}x{H}"
+            )
+            zoom_added = True
             break
 
-    # ---- Slide in
-    for e in effs:
-        if (e.get("type") or "").lower() == "slide_in":
-            direction = (e.get("direction") or "up").lower()
-            dur_slide = float(e.get("duration", 1.0))
-            if direction == "up":
-                chain += f",fade=t=in:st=0:d={dur_slide},translate=y='h-(t/{dur_slide})*h'"
-            elif direction == "down":
-                chain += f",fade=t=in:st=0:d={dur_slide},translate=y='-(h-(t/{dur_slide})*h)'"
-            elif direction == "left":
-                chain += f",fade=t=in:st=0:d={dur_slide},translate=x='w-(t/{dur_slide})*w'"
-            elif direction == "right":
-                chain += f",fade=t=in:st=0:d={dur_slide},translate=x='-(w-(t/{dur_slide})*w)'"
-
-    # ---- Fade in/out
+    # ---- Fade
+    fade_in, fade_out = None, None
     for e in effs:
         if (e.get("type") or "").lower() == "fade":
-            fin = float(e.get("in", 0.5))
-            fout = float(e.get("out", 0.5))
-            chain += f",fade=t=in:st=0:d={fin:.3f},fade=t=out:st={max(0.0, dur-fout):.3f}:d={fout:.3f}"
+            fade_in = float(e.get("in", 0.5))
+            fade_out = float(e.get("out", 0.5))
 
-    # ---- Slide out
-    for e in effs:
-        if (e.get("type") or "").lower() == "slide_out":
-            direction = (e.get("direction") or "down").lower()
-            dur_slide = float(e.get("duration", 1.0))
-            if direction == "up":
-                chain += f",fade=t=out:st={max(0.0, dur-dur_slide):.3f}:d={dur_slide},translate=y='-(t/{dur_slide})*h'"
-            elif direction == "down":
-                chain += f",fade=t=out:st={max(0.0, dur-dur_slide):.3f}:d={dur_slide},translate=y='(t/{dur_slide})*h'"
-            elif direction == "left":
-                chain += f",fade=t=out:st={max(0.0, dur-dur_slide):.3f}:d={dur_slide},translate=x='-(t/{dur_slide})*w'"
-            elif direction == "right":
-                chain += f",fade=t=out:st={max(0.0, dur-dur_slide):.3f}:d={dur_slide},translate=x='(t/{dur_slide})*w'"
+    if fade_in:
+        chain += f",fade=t=in:st=0:d={fade_in:.3f}"
+    if fade_out:
+        chain += f",fade=t=out:st={max(0.0, dur-fade_out):.3f}:d={fade_out:.3f}"
 
+    # ---- Always end with fps/format
+    chain += f",fps={FPS},format=yuva420p"
     return chain
 
+
+def _build_slide_expr(e: dict, W: int, H: int, start: float, dur: float) -> Tuple[str, str]:
+    direction = (e.get("direction") or "up").lower()
+    dur_slide = float(e.get("duration", 1.0))
+    t_start = start if e["type"].lower() == "slide_in" else (start + dur - dur_slide)
+
+    if direction == "up":
+        return ("(W-w)/2", f"H-((t-{t_start})/{dur_slide})*H")
+    elif direction == "down":
+        return ("(W-w)/2", f"-H+((t-{t_start})/{dur_slide})*H")
+    elif direction == "left":
+        return (f"W-((t-{t_start})/{dur_slide})*W", "(H-h)/2")
+    elif direction == "right":
+        return (f"-W+((t-{t_start})/{dur_slide})*W", "(H-h)/2")
+    return ("(W-w)/2", "(H-h)/2")
 
 
 def _escape_sub_path(p: str) -> str:
@@ -182,7 +180,6 @@ def _escape_sub_path(p: str) -> str:
 
 
 def _maybe_convert_vtt_to_srt(src_path: str, workdir: str) -> str:
-    # Burn-in prefers SRT/ASS; convert VTT if needed.
     base = os.path.splitext(os.path.basename(src_path))[0]
     out_srt = os.path.join(workdir, f"{base}.srt")
     ffmpeg = which("ffmpeg")
@@ -197,16 +194,13 @@ def _maybe_convert_vtt_to_srt(src_path: str, workdir: str) -> str:
 # ---------- Timeline builder ----------
 def build_from_timeline(data: dict, workdir: str, out_path: str,
                         W: int, H: int, FPS: int, prefer_nvenc: bool) -> List[str]:
-    # Parse timeline
-    vclips = extract_timeline_clips(data)      # video + image
-    aclips = extract_timeline_audio(data)      # audio
-    subs   = extract_timeline_subtitles(data)  # subtitles
+    vclips = extract_timeline_clips(data)
+    aclips = extract_timeline_audio(data)
+    subs   = extract_timeline_subtitles(data)
 
     if not vclips and not aclips and not subs:
-        print("[renderer] Timeline detected but no clips found; falling back.")
         return build_black_fallback(out_path, W, H, FPS)
 
-    # Compute total duration (longest end among clips/audio)
     total_dur = 0.0
     for c in vclips:
         total_dur = max(total_dur, float(c.get("start", 0.0)) + float(c.get("length") or 0.0))
@@ -219,10 +213,9 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
     filters: List[str] = []
     input_idx = 0
 
-    base_labels: List[str] = []      # timeline segments to concat
-    overlays: List[tuple] = []       # (label, x, y, start, dur)
+    base_labels: List[str] = []
+    overlays: List[tuple] = []   # (label, x, y, start, dur, effects)
 
-    # Build base segments and/or overlay sources
     for i, c in enumerate(vclips):
         path = download_asset(c["src"], workdir)
         is_image = path.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))
@@ -232,35 +225,27 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
         force_ar = "decrease" if fit_mode == "cover" else "increase"
 
         if is_image:
-            # Image as input: loop a single frame stream for 'dur'
             add_input(inputs, "-loop", "1", "-t", f"{dur:.3f}", "-i", path)
             vin = f"[{input_idx}:v]"
+
             chain = (
                 f"{vin}"
                 f"scale={W}:{H}:force_original_aspect_ratio={force_ar},"
                 f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black,"
-                f"setsar=1,fps={FPS},format=yuva420p"
+                f"setsar=1"
             )
             chain = apply_effects(chain, c.get("effects"), W, H, FPS, dur, i)
 
             if c.get("position"):
-                # OVERLAY image (do NOT push to base concat)
-                # Limit duration and reset PTS so the looped image doesn't run forever
                 chain += f",trim=duration={dur},setpts=PTS-STARTPTS[ovl{i}]"
                 filters.append(chain)
-
-                # Use the position from payload
                 x, y = position_to_xy(c.get("position"), W, H)
-
-                # Append overlay instruction (with start/end for enable=between)
-                overlays.append((f"[ovl{i}]", x, y, start, dur))
+                overlays.append((f"[ovl{i}]", x, y, start, dur, c.get("effects") or []))
             else:
-                # STANDALONE image segment -> give it a timeline offset
                 chain += f",trim=duration={dur},setpts=PTS+{start}/TB[b{i}]"
                 filters.append(chain)
                 base_labels.append(f"[b{i}]")
         else:
-            # Video clip; trim/offset into the timeline
             if (c.get("length") or 0) > 0:
                 add_input(inputs, "-ss", "0", "-t", f"{dur:.3f}", "-i", path)
             else:
@@ -283,7 +268,6 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
 
         input_idx += 1
 
-    # Compose base video: concat segments if any
     vmap = None
     if base_labels:
         if len(base_labels) == 1:
@@ -292,21 +276,25 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
             filters.append(f"{''.join(base_labels)}concat=n={len(base_labels)}:v=1:a=0[vbase]")
             vmap = "[vbase]"
     elif overlays:
-        # Only overlays but no base -> use black canvas as background
         filters.append(f"color=c=black:s={W}x{H}:d={total_dur},fps={FPS}[vbase]")
         vmap = "[vbase]"
 
-    # Apply overlays over vmap
     if overlays and vmap:
         last = vmap
-        for j, (ovl, x, y, start, dur) in enumerate(overlays):
+        for j, (ovl, x, y, start, dur, effs) in enumerate(overlays):
+            x_expr, y_expr = x, y
+            enable_expr = f"between(t,{start:.3f},{start+dur:.3f})"
+            for e in effs:
+                ttype = (e.get("type") or "").lower()
+                if ttype in ("slide_in", "slide_out"):
+                    x_expr, y_expr = _build_slide_expr(e, W, H, start, dur)
             filters.append(
-                f"{last}{ovl}overlay=x={x}:y={y}:enable='between(t,{start:.3f},{dur:.3f})'[tmp{j}]"
+                f"{last}{ovl}overlay=x='{x_expr}':y='{y_expr}':enable='{enable_expr}'[tmp{j}]"
             )
             last = f"[tmp{j}]"
         vmap = last
 
-    # ---- AUDIO graph ----
+    # AUDIO
     audio_labels: List[str] = []
     for j, a in enumerate(aclips):
         path = download_asset(a["src"], workdir)
@@ -314,7 +302,6 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
         start = float(a.get("start", 0.0))
         start_ms = max(0, int(round(start * 1000)))
         vol = float(a["volume"]) if a.get("volume") is not None else 1.0
-
         add_input(inputs, "-ss", "0", "-t", f"{dur:.3f}", "-i", path)
         ain = f"[{input_idx}:a]"
         chain = (
@@ -334,7 +321,6 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
             filters.append(f"{''.join(audio_labels)}amix=inputs={len(audio_labels)}:normalize=0:dropout_transition=0[aout]")
             amap = "[aout]"
 
-    # ---- SUBTITLES (burn-in) ----
     if vmap:
         subs_list = subs or []
         if subs_list:
@@ -349,7 +335,6 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
                 filters.append(f"{vmap}subtitles='{esc}'[vsub]")
                 vmap = "[vsub]"
 
-    # ---- Build final ffmpeg command ----
     ffmpeg = which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("ffmpeg not found in PATH")
@@ -359,11 +344,8 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
         if has_nvenc_encoder(ffmpeg) and (FORCE_NVENC or nvenc_usable(ffmpeg)):
             use_nvenc = True
 
-    print("[renderer] Building from TIMELINE. NVENC:", use_nvenc)
-
     cmd: List[str] = [ffmpeg, "-y", "-hide_banner"]
     cmd += inputs
-
     if filters:
         cmd += ["-filter_complex", ";".join(filters)]
     if vmap:
@@ -371,18 +353,13 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
     if amap:
         cmd += ["-map", amap]
 
-    # video codec
     vcodec = (["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "23",
                "-b:v", "6M", "-maxrate", "8M", "-bufsize", "12M"]
               if use_nvenc else
               ["-c:v", "libx264", "-preset", "medium", "-crf", "20"])
     cmd += vcodec + ["-r", str(FPS), "-pix_fmt", "yuv420p"]
-
-    # audio codec
     if amap:
         cmd += ["-c:a", "aac", "-b:a", "192k"]
-
-    # ensure we stop with the shortest stream
     cmd += ["-shortest", out_path]
     return cmd
 
@@ -393,20 +370,14 @@ def build_ffmpeg_cmd(payload: RenderPayload, workdir: str, out_path: str) -> Lis
     if not ffmpeg:
         raise RuntimeError("ffmpeg not found in PATH")
     prefer_nvenc = (payload.output.codec or "").lower() == "h264_nvenc" or FORCE_NVENC
-
-    # keep the raw dict if present (timeline pass-through)
     raw = getattr(payload, "_raw_dict", None)
     if raw is None:
         try:
             raw = payload.model_dump()
         except Exception:
             raw = {}
-
     if is_timeline_payload(raw):
-        print("[renderer] Detected TIMELINE payload in build_ffmpeg_cmd()")
         return build_from_timeline(raw, workdir, out_path, W, H, FPS, prefer_nvenc)
-
-    print("[renderer] No timeline detected; using fallback")
     return build_black_fallback(out_path, W, H, FPS)
 
 
