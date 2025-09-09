@@ -339,10 +339,10 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
     if not ffmpeg:
         raise RuntimeError("ffmpeg not found in PATH")
 
-    use_nvenc = False
-    if not FORCE_CPU and prefer_nvenc:
-        if has_nvenc_encoder(ffmpeg) and (FORCE_NVENC or nvenc_usable(ffmpeg)):
-            use_nvenc = True
+    use_nvenc = True
+    # if not FORCE_CPU and prefer_nvenc:
+    #     if has_nvenc_encoder(ffmpeg) and (FORCE_NVENC or nvenc_usable(ffmpeg)):
+    #         use_nvenc = True
 
     cmd: List[str] = [ffmpeg, "-y", "-hide_banner"]
     cmd += inputs
