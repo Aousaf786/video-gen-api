@@ -13,7 +13,7 @@ from .parser import is_timeline_payload
 
 PORT = int(os.getenv("PORT", "8080"))
 OUTPUT_DIR = "/workspace/outputs"
-BASE_URL = "https://xiff2j86qmsii8-8080.proxy.runpod.net"
+BASE_URL = os.getenv("BASE_URL", "https://xiff2j86qmsii8-8080.proxy.runpod.net")
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
