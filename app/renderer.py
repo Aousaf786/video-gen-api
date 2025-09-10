@@ -115,7 +115,7 @@ def build_black_fallback(out_path: str, W: int, H: int, FPS: int) -> List[str]:
 
 
 # ---------- Effects helpers ----------
-def apply_effects(chain: str, effects, W: int, H: int, FPS: int, dur: float, index: int) -> str:
+def apply_effects(chain: str, effects, W: int, H: int, FPS: int, dur: float, start: float, fade_in_start: int, index: int) -> str:
     """
     Supports:
       - {"type":"zoom_in"} / {"type":"zoom_out"}
@@ -137,7 +137,7 @@ def apply_effects(chain: str, effects, W: int, H: int, FPS: int, dur: float, ind
                 f",zoompan=z='{zexpr}':"
                 f"x='iw/2-(iw/zoom)/2':"
                 f"y='ih/2-(ih/zoom)/2':"
-                f"d=1:s={W}x{H}"
+                f"d=1:s={W}x{H}:fps={FPS}"
             )
             zoom_added = True
             break
@@ -150,7 +150,7 @@ def apply_effects(chain: str, effects, W: int, H: int, FPS: int, dur: float, ind
             fade_out = float(e.get("out", 0.5))
 
     if fade_in:
-        chain += f",fade=t=in:st=0:d={fade_in:.3f}"
+        chain += f",fade=t=in:st={fade_in_start}:d={fade_in:.3f}"
     if fade_out:
         chain += f",fade=t=out:st={max(0.0, dur-fade_out):.3f}:d={fade_out:.3f}"
 
@@ -223,8 +223,13 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
         start = float(c.get("start", 0.0))
         fit_mode = (c.get("fit") or "cover").lower()
         force_ar = "decrease" if fit_mode == "cover" else "increase"
+        fade_in_start = 0
 
         if is_image:
+            if c.get("position"):
+                dur = start + dur
+                fade_in_start = start
+            
             add_input(inputs, "-loop", "1", "-t", f"{dur:.3f}", "-i", path)
             vin = f"[{input_idx}:v]"
 
@@ -232,17 +237,18 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
                 f"{vin}"
                 f"scale={W}:{H}:force_original_aspect_ratio={force_ar},"
                 f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black,"
-                f"setsar=1"
+                f"setsar=1,"
+                f"trim=duration={dur},setpts=PTS-STARTPTS"
             )
-            chain = apply_effects(chain, c.get("effects"), W, H, FPS, dur, i)
+            chain = apply_effects(chain, c.get("effects"), W, H, FPS, dur, start, fade_in_start, i)
 
             if c.get("position"):
-                chain += f",trim=duration={dur},setpts=PTS-STARTPTS[ovl{i}]"
+                chain += f"[ovl{i}]"
                 filters.append(chain)
                 x, y = position_to_xy(c.get("position"), W, H)
                 overlays.append((f"[ovl{i}]", x, y, start, dur, c.get("effects") or []))
             else:
-                chain += f",trim=duration={dur},setpts=PTS+{start}/TB[b{i}]"
+                chain += f"[b{i}]"
                 filters.append(chain)
                 base_labels.append(f"[b{i}]")
         else:
@@ -253,7 +259,7 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
             vin = f"[{input_idx}:v]"
             chain = (
                 f"{vin}"
-                f"trim=duration={dur},setpts=PTS+{start}/TB,"
+                f"trim=duration={dur},setpts=PTS-STARTPTS,"
                 f"scale={W}:{H}:force_original_aspect_ratio={force_ar},"
                 f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black,"
                 f"setsar=1,fps={FPS},format=yuva420p"
@@ -261,7 +267,7 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
             if c.get("opacity") is not None:
                 alpha = max(0.0, min(1.0, float(c["opacity"])))
                 chain += f",colorchannelmixer=aa={alpha}"
-            chain = apply_effects(chain, c.get("effects"), W, H, FPS, dur, i)
+            chain = apply_effects(chain, c.get("effects"), W, H, FPS, dur, start, fade_in_start , i)
             chain += f"[b{i}]"
             filters.append(chain)
             base_labels.append(f"[b{i}]")
@@ -283,7 +289,7 @@ def build_from_timeline(data: dict, workdir: str, out_path: str,
         last = vmap
         for j, (ovl, x, y, start, dur, effs) in enumerate(overlays):
             x_expr, y_expr = x, y
-            enable_expr = f"between(t,{start:.3f},{start+dur:.3f})"
+            enable_expr = f"between(t,{start:.3f},{dur:.3f})"
             for e in effs:
                 ttype = (e.get("type") or "").lower()
                 if ttype in ("slide_in", "slide_out"):
